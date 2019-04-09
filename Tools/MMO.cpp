@@ -11,6 +11,7 @@
 #include "Math/gfp.h"
 #include "Math/bigint.h"
 #include <unistd.h>
+#include <openssl/sha.h>
 
 
 void MMO::zeroIV()
@@ -32,9 +33,17 @@ void MMO::encrypt_and_xor(void* output, const void* input, const octet* key)
 {
     __m128i in[N], out[N];
     avx_memcpy(in, input, sizeof(in));
+#ifdef TEST_SHA
+    unsigned char digest[32];
+    for (int i = 0; i < N; i++) {
+        (void )SHA256((const unsigned char *)(in+i), 16, (unsigned char *)digest);
+		  memcpy(out+i, digest, 16);
+    }
+#else
     ecb_aes_128_encrypt<N>(out, in, key);
     for (int i = 0; i < N; i++)
         out[i] = _mm_xor_si128(out[i], in[i]);
+#endif
     avx_memcpy(output, out, sizeof(out));
 }
 
@@ -43,11 +52,23 @@ void MMO::encrypt_and_xor(void* output, const void* input, const octet* key,
         const int* indices)
 {
     __m128i in[N], out[N];
+#ifdef TEST_SHA
+    unsigned char digest[32];
+	 SHA256_CTX hash;
+    avx_memcpy(in, input, sizeof(in));
+    for (int i = 0; i < N; i++) {
+        SHA256_Update(&hash, (const void *)(in+i), 16);
+        SHA256_Update(&hash, (const void *)(indices+i), 4);
+		SHA256_Final((unsigned char *)digest, &hash);
+		  memcpy(out+i, digest, 16);
+    }
+#else
     for (int i = 0; i < N; i++)
         in[i] = _mm_loadu_si128(((__m128i*)input) + indices[i]);
     encrypt_and_xor<N>(out, in, key);
     for (int i = 0; i < N; i++)
         _mm_storeu_si128(((__m128i*)output) + indices[i], out[i]);
+#endif
 }
 
 template <>
